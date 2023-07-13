@@ -1,6 +1,8 @@
-use std::io;
+use std::{fs, io};
+use std::path::PathBuf;
 use actix_cors::Cors;
-use actix_web::{get, web, App, HttpResponse, HttpServer};
+use actix_files as af;
+use actix_web::{get, web, App, HttpResponse, HttpServer, HttpRequest};
 use downloader::*;
 
 #[get("/download_id/{id}")]
@@ -9,14 +11,19 @@ async fn get_download_id(path: web::Path<String>) -> HttpResponse {
 
     let url = format!("https://www.youtube.com/watch?v={}", id);
 
-    match get_video(&url).await {
+    return match get_video(&url).await {
         Ok(uri) => {
-            return HttpResponse::Found().append_header(("Location", uri)).finish();
+            HttpResponse::Found().append_header(("Location", uri)).finish()
         },
         Err(_) => {
-            return HttpResponse::NotFound().finish();
+            HttpResponse::NotFound().finish()
         },
     }
+}
+
+async fn index(_req: HttpRequest) -> Result<af::NamedFile, io::Error> {
+    let path: PathBuf = "./files/index.html".parse().unwrap();
+    Ok(af::NamedFile::open(path)?)
 }
 
 #[actix_web::main]
@@ -26,11 +33,13 @@ async fn main() -> io::Result<()> {
     
     let _ = HttpServer::new(|| {
         let cors = Cors::permissive();
-        
         App::new()
-        .wrap(cors)
-        .service(get_download_id)
-        .route("/", web::get().to(HttpResponse::Ok))
+            .wrap(cors)
+            .service(get_download_id)
+            .service(af::Files::new("/", "./public")
+                .use_last_modified(true)
+                .index_file("index.html")
+            )
     })
     .bind(("127.0.0.1", 3000))?
     .bind(("0.0.0.0", 3000))?
@@ -49,7 +58,7 @@ pub mod downloader {
     use std::fs;
     use std::env;
 
-    pub async fn get_video(url: &String) -> Result<String, Error> {
+    pub async fn get_video(url: &String) -> Result<String, io::Error> {
 
         let mut ytdlp_path: PathBuf = PathBuf::new();
         let _root: PathBuf = env::current_dir().unwrap();
@@ -73,15 +82,15 @@ pub mod downloader {
         }
 
         let id = extract_id(&url);
-        match id {
+        return match id {
             Some(value) => {
                 println!("Video ID: {:?}", value);
                 let video = download_video(&value, &ytdlp_path, None).await.unwrap_or_default();
                 println!("Title: {:?}, channel: {:?}", video.title, video.channel);
-                return Ok(video.url.unwrap())
+                Ok(video.url.unwrap())
             },
             None => {
-                return Err(io::Error::new(io::ErrorKind::NotFound, "Video not found"));
+                Err(Error::new(io::ErrorKind::NotFound, "Video not found"))
             }
         }
     }
@@ -110,12 +119,12 @@ pub mod downloader {
             .run_async()
             .await;
 
-        match output {
+        return match output {
             Ok(v) => {
-                return Some(v.into_single_video().unwrap())
+                Some(v.into_single_video().unwrap())
             },
             Err(_) => {
-                return None;
+                None
             },
         }
     }
@@ -128,7 +137,7 @@ pub mod downloader {
         filepath.extend(&[&filename]);
 
         if !filepath.exists() {
-            return Err(Error::new(io::ErrorKind::InvalidData,format!("{} does not exist", filename)));
+            return Err(io::Error::new(io::ErrorKind::InvalidData,format!("{} does not exist", filename)));
         }
 
         fs::create_dir_all(&temp_dir)?;
