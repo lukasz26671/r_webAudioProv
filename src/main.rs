@@ -1,12 +1,31 @@
-use std::{fs, io};
+use std::{env, fs, io};
 use std::path::PathBuf;
 use actix_cors::Cors;
 use actix_files as af;
 use actix_web::{get, web, App, HttpResponse, HttpServer, HttpRequest};
 use downloader::*;
+use std::io::{BufRead, BufReader, Error};
+use std::process::{Command, Stdio};
 
 #[get("/download_id/{id}")]
-async fn get_download_id(path: web::Path<String>) -> HttpResponse { 
+async fn get_download_id(req: HttpRequest, path: web::Path<String>) -> HttpResponse { 
+    let id = path.into_inner();
+
+    let url = format!("https://www.youtube.com/watch?v={}", id);
+
+    return match dl_get_video(&url).await {
+        Ok(pbf) => {
+            let f = af::NamedFile::open_async(pbf).await.unwrap();
+            
+            return f.into_response(&req);
+        },
+        Err(_) => {
+            HttpResponse::NotFound().finish()
+        },
+    }
+}
+#[get("/stream_id/{id}")]
+async fn get_stream_id(path: web::Path<String>) -> HttpResponse {
     let id = path.into_inner();
 
     let url = format!("https://www.youtube.com/watch?v={}", id);
@@ -21,6 +40,7 @@ async fn get_download_id(path: web::Path<String>) -> HttpResponse {
     }
 }
 
+
 async fn index(_req: HttpRequest) -> Result<af::NamedFile, io::Error> {
     let path: PathBuf = "./files/index.html".parse().unwrap();
     Ok(af::NamedFile::open(path)?)
@@ -30,12 +50,17 @@ async fn index(_req: HttpRequest) -> Result<af::NamedFile, io::Error> {
 async fn main() -> io::Result<()> {
     let port: i32 = 3000;
     println!("Running on port {}", port);
+    let _root: PathBuf = env::current_dir().unwrap();
+    let tmp_path = _root.join("temp");
+    fs::remove_dir_all(&tmp_path)?;
+    fs::create_dir_all(&tmp_path)?;
     
     let _ = HttpServer::new(|| {
         let cors = Cors::permissive();
         App::new()
             .wrap(cors)
             .service(get_download_id)
+            .service(get_stream_id)
             .service(af::Files::new("/", "./public")
                 .use_last_modified(true)
                 .index_file("index.html")
@@ -52,15 +77,45 @@ async fn main() -> io::Result<()> {
 
 
 pub mod downloader {
-    use youtube_dl::{YoutubeDl, SingleVideo};
+    use youtube_dl::{YoutubeDl, SingleVideo, YoutubeDlOutput};
     use std::{path::PathBuf, io::Error};
     use std::io;
     use std::fs;
     use std::env;
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    use tokio::fs::File;
 
+    pub async fn process_file(filename: &str) -> Result<(), io::Error>{
+        let mut root = env::current_dir().unwrap();
+        root.extend(&["ffmpeg.exe"]);
+        
+        let mut cmd = Command::new(root.as_path())
+            .args([
+                "-i",
+                &format!("{}.opus", filename),
+                "-ab",
+                "320k",
+                &format!("{}.mp3", filename)
+            ]).stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        {
+            let stdout = cmd.stdout.as_mut().unwrap();
+            let stdout_reader = BufReader::new(stdout);
+            let stdout_lines = stdout_reader.lines();
+            
+            for line in stdout_lines {
+                println!("Read: {:?}", line);
+            }
+        }
+        cmd.wait().unwrap();
+        Ok(())
+    }
+    
     pub async fn get_video(url: &String) -> Result<String, io::Error> {
-
         let mut ytdlp_path: PathBuf = PathBuf::new();
+        let mut tmp_path: PathBuf = PathBuf::new();
         let _root: PathBuf = env::current_dir().unwrap();
         if let Some(proj_dirs) = directories::ProjectDirs::from("me", "lukasz26671", "r_webaudioprov") {
             let dir = proj_dirs.data_dir();
@@ -79,15 +134,91 @@ pub mod downloader {
                 }
             }
             ytdlp_path = dir.join("yt-dlp.exe"); 
+            tmp_path = _root.join("/temp");
+            
+            println!("{}", tmp_path.to_str().unwrap());
         }
 
         let id = extract_id(&url);
+
         return match id {
             Some(value) => {
                 println!("Video ID: {:?}", value);
-                let video = download_video(&value, &ytdlp_path, None).await.unwrap_or_default();
+                let video = download_video(&value, &ytdlp_path, Some(false)).await.unwrap_or_default();
                 println!("Title: {:?}, channel: {:?}", video.title, video.channel);
+
                 Ok(video.url.unwrap())
+            },
+            None => {
+                Err(Error::new(io::ErrorKind::NotFound, "Video not found"))
+            }
+        }
+    }
+    pub async fn dl_get_video(url: &String) -> Result<PathBuf, io::Error> {
+
+        let mut ytdlp_path: PathBuf = PathBuf::new();
+        let mut tmp_path: PathBuf = PathBuf::new();
+        let _root: PathBuf = env::current_dir().unwrap();
+        if let Some(proj_dirs) = directories::ProjectDirs::from("me", "lukasz26671", "r_webaudioprov") {
+            let dir = proj_dirs.data_dir();
+            let mut ytdlp: PathBuf = env::current_dir().unwrap();
+            ytdlp.extend(&["yt-dlp.exe"]);
+
+            fs::create_dir_all(dir)?;
+            if !dir.join("yt-dlp.exe").exists() {
+                match fs::copy(ytdlp,dir.join("yt-dlp.exe").as_path()) {
+                    Ok(_) => {
+                        println!("Successfully copied");
+                    },
+                    Err(err) => {
+                        panic!("failed to copy, {}", err);
+                    },
+                }
+            }
+            ytdlp_path = dir.join("yt-dlp.exe");
+            tmp_path = _root.join("temp");
+            println!("{}", tmp_path.to_str().unwrap());
+        }
+
+        let id = extract_id(&url);
+
+        return match id {
+            Some(value) => {
+                println!("Video ID: {:?}", value);
+                let vmetadata = get_video_metadata(&value, &ytdlp_path).await.unwrap();
+
+                let fname = format!("{} [{}].mp3", vmetadata.title, vmetadata.id);
+
+                let tmp_fpath = tmp_path.join(&fname);
+                if tmp_fpath.exists() {
+                    println!("File {} found in storage", tmp_fpath.to_str().unwrap());
+
+                    return Ok(tmp_fpath);
+                }
+                
+                let video = download_video(&value, &ytdlp_path, Some(true)).await.unwrap_or_default();
+                println!("Title: {:?}, channel: {:?}", video.title, video.channel);
+
+                println!("processing file");
+                process_file(&format!("{} [{}]", video.title, video.id)).await.unwrap();
+                println!("moving file");
+                let p = move_video_to_temp(&_root, &fname).unwrap();
+                println!("move finished");
+                for path in fs::read_dir(&_root).unwrap() {
+                    let path = path.unwrap().path();
+                    match path.extension() {
+                        None => {
+                            
+                        }
+                        Some(ext) => {
+                            use std::ffi::OsStr;
+                            if ext == OsStr::new("opus") {
+                                fs::remove_file(path).unwrap();
+                            }
+                        }
+                    };
+                }
+                Ok(p)
             },
             None => {
                 Err(Error::new(io::ErrorKind::NotFound, "Video not found"))
@@ -111,14 +242,16 @@ pub mod downloader {
 
         println!("Downloading video: {}", url);
 
-        let output = YoutubeDl::new(url)
+        let dl = download.unwrap_or_default();
+        println!("{}", dl);
+        let output = YoutubeDl::new(&url)
             .youtube_dl_path(ytdl_path)
             .socket_timeout("15")
             .format("bestaudio")
-            .download(download.unwrap_or_default())
-            .run_async()
-            .await;
-
+            .extract_audio(dl)
+            .download(dl)
+            .run_async().await;
+            
         return match output {
             Ok(v) => {
                 Some(v.into_single_video().unwrap())
@@ -129,7 +262,25 @@ pub mod downloader {
         }
     }
 
-    pub fn move_video_to_temp(root_dir : &PathBuf, filename: &String) -> Result<(), io::Error> {
+    pub async fn get_video_metadata(id:  &String, ytdl_path: &PathBuf) -> Option<SingleVideo> {
+        let url = format!("https://www.youtube.com/watch?v={}", id);
+        let output = YoutubeDl::new(&url)
+            .youtube_dl_path(ytdl_path)
+            .socket_timeout("15")
+            .format("bestaudio")
+            .run_async().await;
+        
+        return match output {
+            Ok(v) => {
+                Some(v.into_single_video().unwrap())
+            },
+            Err(_) => {
+                None
+            },
+        }
+    }
+    
+    pub fn move_video_to_temp(root_dir : &PathBuf, filename: &String) -> Result<PathBuf, io::Error> {
         let mut temp_dir = root_dir.clone();
         temp_dir.extend(&["temp"]);
 
@@ -139,25 +290,30 @@ pub mod downloader {
         if !filepath.exists() {
             return Err(io::Error::new(io::ErrorKind::InvalidData,format!("{} does not exist", filename)));
         }
-
+        
         fs::create_dir_all(&temp_dir)?;
 
-        match fs::rename(filepath, temp_dir.join(&filename)) {
+        return match fs::rename(filepath, temp_dir.join(&filename)) {
             Ok(_) => {
-                println!("Successfully moved {} to {}", filename, temp_dir.join(&filename).to_str().unwrap());
-                return Ok(())
+                let p = temp_dir.join(&filename);
+                println!("Successfully moved {} to {}", filename, p.to_str().unwrap());
+                
+                
+                Ok(p)
             },
             Err(e) => {
                 println!("Error: {}", e);
-                return Err(e);
+                Err(e)
             },
         };
     }
 }
 #[cfg(test)]
 mod test {
+    use std::env;
     use super::*;
     use tokio::runtime::Runtime;
+
 
     #[test]
     fn test_extract_id_passing() {
