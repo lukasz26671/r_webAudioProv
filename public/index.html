@@ -1,0 +1,69 @@
+<!DOCTYPE HTML>
+<html lang="pl">
+<head>
+	<meta charset="utf-8"/>
+	<title>Youtube audio stream service</title>
+	<style>
+		* {
+			font-family: sans-serif;
+		}
+		body {
+			margin: 0; 
+			padding: 0;
+			position: relative;
+		}
+		#container {
+			position: absolute;
+			left: 50%;
+			top: 0;
+			transform: translateX(-50%);
+			padding: .25rem .75rem;
+			width: 50%;
+			text-align: center;
+		}
+		#container input {
+			margin-top: 1rem;
+			padding: .25rem .5rem;
+		}
+		#container input[type="url"] {
+			padding: .35rem .7rem;
+			width: 40%;
+		}
+		
+	</style>
+</head>
+<body>
+	<div id="container">
+		<form>
+			<label for="ytlink">Youtube video link</label><br>
+			<input type="url" id="ytlink" name="ytlink" placeholder="https://youtube.com/watch?v="/>
+			
+			<br/>
+			<input type="button" id="stream" value="Stream"/>
+			<input type="button" id="download" value="Download"/>
+
+		</form>
+	</div>
+	<script>
+		const form = document.querySelector('form');
+		download.addEventListener('click', (evt)=> {
+			let link = getFData();
+			
+			window.location.href = `/download_id/${link}`;
+		});
+		stream.addEventListener('click', (evt)=> {
+			let link = getFData();
+
+			window.location.href = `/stream_id/${link}`;
+		});
+		function getFData() {
+			let formData = new FormData(form);
+			let ytlink = formData.get("ytlink");
+			let link = ytlink.substring(ytlink.indexOf("v=")+2);
+			
+			return link;
+		}
+	
+	</script>
+</body>
+</html>
