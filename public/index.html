@@ -1,48 +1,85 @@
 <!DOCTYPE HTML>
-<html lang="pl">
+<html lang="pl" data-bs-theme="dark">
 <head>
-	<meta charset="utf-8"/>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Youtube audio stream service</title>
 	<style>
-		* {
-			font-family: sans-serif;
+		html, body {
+			width: 100%;
+			height: 100%;
 		}
-		body {
-			margin: 0; 
-			padding: 0;
-			position: relative;
-		}
-		#container {
-			position: absolute;
-			left: 50%;
+		iframe#ytplayback {
 			top: 0;
+			left: 0;
+			width: 100%;
+			aspect-ratio: 16/9;
+		}
+		audio {
+			top: 0;
+			left: 50%;
 			transform: translateX(-50%);
-			padding: .25rem .75rem;
-			width: 50%;
-			text-align: center;
+			width: 100%;
 		}
-		#container input {
-			margin-top: 1rem;
-			padding: .25rem .5rem;
+		@media (max-width: 800px) {
+			audio {
+				width: 100%;
+			}
+		@media (max-width: 576px) {
+			#btns {
+				width: 100%;
+				margin: 0 auto !important;
+			}
+			#btns #stream {
+				margin: 0 !important
+			}
 		}
-		#container input[type="url"] {
-			padding: .35rem .7rem;
-			width: 40%;
 		}
-		
 	</style>
+	<link rel="stylesheet" href="./css/bootstrap.min.css"/>
+	<script src="./js/bootstrap.bundle.min.js"></script>
 </head>
-<body>
-	<div id="container">
-		<form>
-			<label for="ytlink">Youtube video link</label><br>
-			<input type="url" id="ytlink" name="ytlink" placeholder="https://youtube.com/watch?v="/>
-			
-			<br/>
-			<input type="button" id="stream" value="Stream"/>
-			<input type="button" id="download" value="Download"/>
-
-		</form>
+<body class="bg-dark-subtle">
+	<nav class="navbar navbar-dark text-white bg-dark">
+		  <div class="container">
+			<a class="navbar-brand" href="#">Youtube downloader</a>
+	  </div>
+	</nav>
+	<div class="container container-fluid">
+		<div class="row justify-content-center align-self-center">
+			<div class="col-sm-12 col-md-8 col-lg-6">
+				<div class="row">
+					<form class="py-4 px-2">
+						<div class="mb-3">
+						<label for="" class="form-label">Youtube video link</label>
+						<input type="text"
+							class="form-control" name="ytlink" id="ytlink"  placeholder="https://youtube.com/watch?v=">
+						<small id="helpId" class="form-text text-muted">Here you can enter youtube video link</small>
+						</div>
+						<div class="mb-3"> 
+							<label for="format" class="form-label">Format</label>
+							<select class="form-select form-select-lg" name="format" id="format">
+								<option value="mp3">mp3</option>
+								<option value="mp4">mp4</option>
+							</select>
+						</div>
+						<div id="btns" class="form-group d-flex flex-column flex-sm-row">
+							<button type="button" class="btn my-1 btn-primary" id="download">Download</button>
+							<button type="button" class="btn my-1 mx-1 btn-primary" id="stream">Stream</button>
+							<button type="button" class="btn my-1 btn-secondary" id="watch">Watch below</button>
+						</div>
+					</form>
+				</div>
+				<div class="row justify-content-center align-items-center">
+					<div class="col text-center position-relative">
+					<audio class="d-none position-absolute" id="playback" controlsList="nodownload"></audio>
+					<iframe class="d-none position-absolute" id="ytplayback" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+				</div>
+				</div>
+			</div>
+		</div>
+		
 	</div>
 	<script>
 		const form = document.querySelector('form');
@@ -56,14 +93,49 @@
 
 			window.location.href = `/stream_id/${link}`;
 		});
+
+		watch.addEventListener('click', (evt)=> {
+			const ismp4 = format.value === "mp4";
+			let link = getFData();
+			let audioEl = document.getElementById("playback");
+
+			if(!ismp4) {
+				ytplayback.classList.add("d-none")
+				audioEl.classList.remove("d-none")
+				audioEl.classList.add("d-block")
+
+				audioEl.src = `/stream_id/${link}`;
+				ytplayback.src = "";
+				audioEl.controls = true;
+			} else {
+				audioEl.classList.add("d-none")
+				audioEl.pause();
+				audioEl.currentTime = 0;
+				ytplayback.classList.remove("d-none")
+				ytplayback.classList.add("d-block")
+
+				let s = youtube_parser(`https://youtu.be/${link}`)
+				ytplayback.src=`https://www.youtube.com/embed/${s}`;
+			}
+		});
+		format.addEventListener('change', (evt)=> {
+			stream.disabled = evt.target.value === "mp4"
+		})
+
 		function getFData() {
 			let formData = new FormData(form);
 			let ytlink = formData.get("ytlink");
-			let link = ytlink.substring(ytlink.indexOf("v=")+2);
-			
-			return link;
+			let link = youtube_parser(ytlink);
+			let format = formData.get("format");
+
+			return `${link}?format=${format}`;
 		}
 	
+		function youtube_parser(url){
+			var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+			var match = url.match(regExp);
+			return (match&&match[7].length==11)? match[7] : false;
+		}
 	</script>
 </body>
 </html>

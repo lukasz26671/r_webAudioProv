@@ -12,3 +12,12 @@ youtube_dl = { version = "^0.8.1", features = ["tokio"] }
 actix-web = "4"
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
+serde = {version="1.0.171", features=["std", "derive"]}
+rustube = "0.6.0"
+open = "5.0.0"
+envy = "0.4.2"
+dotenv = "0.15.0"
+
+[package.metadata.bundle]
+Name="YoutubeDownloader"
+copyright = "Copyright (c) Lukasz26671 2023. All rights reserved."

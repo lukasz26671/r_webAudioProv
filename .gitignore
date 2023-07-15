@@ -21,3 +21,5 @@ Cargo.lock
 temp/*
 *.webm
 *.weba
+*.mp3
+*.mp4
