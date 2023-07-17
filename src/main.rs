@@ -1,10 +1,11 @@
+use std::ops::Deref;
 use std::{env, fs, io};
 use std::path::PathBuf;
 use actix_cors::Cors;
 use actix_files as af;
 use actix_web::{get, web, App, HttpResponse, HttpServer, HttpRequest};
 use downloader::*;
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 use open;
 use envy;
 use dotenv::dotenv;
@@ -14,7 +15,6 @@ pub struct DownloaderParams {
     format: Option<String>
 }
 #[derive(Deserialize, Debug)]
-
 struct Configuration {
     #[serde(default="default_max_video_duration_minutes")]
     max_video_duration_minutes: u16, 
@@ -93,6 +93,57 @@ async fn get_stream_id(req: HttpRequest, path: web::Path<String>) -> HttpRespons
     }
 }
 
+#[get("/info_id/{id}")]
+async fn get_info_id(req: HttpRequest, path: web::Path<String>) -> web::Json<MediaMetadata> {
+    let id = path.into_inner();
+    let url = format!("https://www.youtube.com/watch?v={}", id);
+
+    let metadata = get_metadata_resp(&url).await.unwrap();
+
+    return web::Json(metadata);
+}
+#[get("/html_info_id/{id}")]
+async fn html_get_info_id(req: HttpRequest, path: web::Path<String>) -> String {
+    use MediaMetadata;
+
+    let id = path.into_inner();
+    let url = format!("https://www.youtube.com/watch?v={}", id);
+
+    let metadata_r = get_metadata_resp(&url).await;
+
+    let res = || -> Result<String, io::Error> {
+        let metadata = metadata_r.unwrap();
+
+        let thumbnails = metadata.thumbnails.unwrap();
+        let th = thumbnails.iter().filter(|x| !x.url.contains("maxres")).max_by_key(|x| x.width).unwrap();
+    
+        let len = metadata.short_desc.len();
+        let mut dsc : String = metadata.short_desc.chars().take(300).collect();
+        
+        if len >= 300 {
+            dsc = format!("{}...", dsc);
+        }
+    
+        let html = format!(r#"
+            <div class='col-12 col-md-4 align-items-center text-center justify-content-center'>
+                <img src='{}' style='object-fit: cover; width: 100%; user-select: none;' alt='thumbnail' class='img-fluid img-thumbnail'/>
+            </div>
+            <div class="col-12 col-md-8 align-items-center">
+                <h3><a href='{}'>{}</a></h3>
+                <p>{}</p>
+                <small>Author: {}</small>
+                <small>Length: {}s</small>
+            </div>
+        </div>
+        "#, th.url, url, metadata.title, dsc, metadata.author, metadata.length);
+    
+        return Ok(html);
+    };
+
+    return res().unwrap_or("".to_string());
+}
+    
+
 #[actix_web::main]
 async fn main() -> io::Result<()> {
     dotenv().ok();
@@ -112,6 +163,8 @@ async fn main() -> io::Result<()> {
             .wrap(cors)
             .service(get_download_id)
             .service(get_stream_id)
+            .service(get_info_id)
+            .service(html_get_info_id)
             .service(af::Files::new("/", "./public")
                 .use_last_modified(true)
                 .index_file("index.html")
@@ -129,16 +182,18 @@ async fn main() -> io::Result<()> {
 
 
 pub mod downloader {
+    use rustube::video_info::player_response::video_details::Thumbnail;
     use youtube_dl::{YoutubeDl, SingleVideo};
+    use std::ops::Deref;
     use std::{path::PathBuf, io::Error};
-    use std::io;
+    use std::{io, path};
     use std::fs;
     use std::env;
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
     use rustube::*;
 
-    pub async fn process_audio(filename: &str) -> Result<(), io::Error>{
+    pub async fn process_audio(filename: &String) -> Result<(), io::Error>{
         let mut root = env::current_dir().unwrap();
         root.extend(&["ffmpeg.exe"]);
         
@@ -225,7 +280,7 @@ pub mod downloader {
 
         return Ok(path);
     }
-    
+
     pub async fn dl_get_audio(url: &String) -> Result<PathBuf, io::Error> {
         let _root: PathBuf = env::current_dir().unwrap();
         let (ytdlp_path, tmp_path) = setup(&_root).unwrap();
@@ -240,12 +295,15 @@ pub mod downloader {
                 let c : super::Configuration = envy::from_env::<super::Configuration>().expect("Provide config.");
                 
                 let duration = vmetadata.duration.unwrap_or_default().as_f64().unwrap();
+                
 
-                if c.limit_duration && duration > (c.max_video_duration_minutes as f64 * 60.0) {
+                if c.limit_duration && duration > (c.max_audio_duration_minutes as f64 * 60.0) {
                     return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Audio duration exceeds maximum of {} hours", (c.max_audio_duration_minutes as f64 / 60.0))));
                 }
 
-                let fname = format!("{} [{}].mp3", vmetadata.title, vmetadata.id);
+                let nftitle: String = vmetadata.title.chars().filter(|c| c.is_ascii()).collect::<String>().replace("/", "").replace("|", "");
+
+                let fname = format!("{} [{}].mp3", nftitle, vmetadata.id);
 
                 let tmp_fpath = tmp_path.join(&fname);
                 if tmp_fpath.exists() {
@@ -255,10 +313,14 @@ pub mod downloader {
                 }
                 
                 let video = download_audio(&value, &ytdlp_path, Some(true)).await.unwrap_or_default();
-                println!("Title: {:?}, channel: {:?}", video.title, video.channel);
+                let out_name: String = format!("[{}].opus", video.id);
+
+                let _fname = format!("{} [{}].opus", nftitle, video.id);
+
+                tokio::fs::rename(&out_name, &_fname).await.unwrap();
 
                 println!("processing file");
-                process_audio(&format!("{} [{}]", video.title, video.id)).await.unwrap();
+                process_audio(&format!("{} [{}]", nftitle, video.id)).await.unwrap();
                 println!("moving file");
                 let p = move_video_to_temp(&_root, &fname).unwrap();
                 println!("move finished");
@@ -294,15 +356,18 @@ pub mod downloader {
             Some(value) => {
                 println!("Video ID: {:?}", value);
                 let vmetadata = get_metadata(&value, &ytdlp_path, Some(false)).await.unwrap();
-                let fname = format!("{} [{}]", vmetadata.title, vmetadata.id);
                
                 let c : super::Configuration = envy::from_env::<super::Configuration>().expect("Provide config.");
 
                 let duration = vmetadata.duration.unwrap_or_default().as_f64().unwrap();
-
+                
                 if c.limit_duration && duration > (c.max_video_duration_minutes as f64 * 60.0) {
                     return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Video duration exceeds maximum of {} minutes", c.max_video_duration_minutes)));
                 }
+
+                let nftitle: String = vmetadata.title.chars().filter(|c| c.is_ascii()).collect::<String>().replace("/", "").replace("|", "");
+
+                let fname = format!("{} [{}].mp4", nftitle, vmetadata.id);
 
                 let tmp_fpath = tmp_path.join(format!("{}.mp4", &fname));
                 if tmp_fpath.exists() {
@@ -314,15 +379,21 @@ pub mod downloader {
                 download_video(&value, &ytdlp_path, Some(true)).await.unwrap_or_default();
                 println!("Title: {:?}, channel: {:?}", vmetadata.title, vmetadata.channel);
 
+                let out_name: String = format!("[{}].webm", &vmetadata.id);
+                let _fnamewext = format!("{} [{}]", &nftitle, &vmetadata.id);
+                let _fname = format!("{}.webm", &_fnamewext);
+
+                tokio::fs::rename(&out_name, &_fname).await.unwrap();
+
                 let mut ext: &str = "webm";
 
                 if process {
                     println!("processing file");
                     ext = "mp4";
-                    process_video(&format!("{} [{}]", vmetadata.title, vmetadata.id)).await.unwrap();
+                    process_video(&_fnamewext).await.unwrap();
                 }
                 println!("moving file");
-                let p = move_video_to_temp(&_root, &format!("{}.{}", &fname, ext)).unwrap();
+                let p = move_video_to_temp(&_root, &format!("{} [{}].{}", &nftitle, &vmetadata.id, ext)).unwrap();
                 println!("move finished");
                 for path in fs::read_dir(&_root).unwrap() {
                     let path = path.unwrap().path();
@@ -367,6 +438,7 @@ pub mod downloader {
             .socket_timeout("15")
             .format("bestaudio")
             .extract_audio(dl)
+            .output_template("[%(id)s].%(ext)s")
             .download(dl)
             .run_async().await;
             
@@ -391,6 +463,7 @@ pub mod downloader {
             .youtube_dl_path(ytdl_path)
             .socket_timeout("15")
             .format("bestaudio+bestvideo")
+            .output_template("[%(id)s].%(ext)s")
             .download(dl)
             .run_async().await;
             
@@ -473,6 +546,42 @@ pub mod downloader {
         }
         return None;
     }
+
+    pub async fn get_metadata_resp(url: &String) -> Result<MediaMetadata> {
+        
+        let id = Id::from_raw(&url)?;
+
+        let descrambler = VideoFetcher::from_id(id.into_owned())?.fetch().await?;
+
+        let info = descrambler.video_info();
+        let details = descrambler.video_details();
+        
+        let result = MediaMetadata {
+            title: (details.title.to_string()),
+            author: (details.author.to_string()),
+            short_desc: (details.short_description.to_string()),
+            id: (details.video_id.to_string()),
+            age_restricted: info.is_age_restricted,
+            is_private: details.is_private,
+            length: details.length_seconds,
+            thumbnails: Some(details.thumbnails.to_vec())
+        };
+
+        Ok(result)
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct MediaMetadata {
+        pub title: String,
+        pub author: String,
+        pub short_desc: String,
+        pub id: String,
+        pub length: u64,
+        pub age_restricted: bool,
+        pub is_private: bool,
+        pub thumbnails: Option<Vec<Thumbnail>>,
+    }
+
 }
 #[cfg(test)]
 mod test {

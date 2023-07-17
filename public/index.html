@@ -38,6 +38,7 @@
 		}
 	</style>
 	<link rel="stylesheet" href="./css/bootstrap.min.css"/>
+	<script src="https://unpkg.com/htmx.org@1.9.3"></script>
 	<script src="./js/bootstrap.bundle.min.js"></script>
 </head>
 <body class="bg-dark-subtle">
@@ -53,7 +54,7 @@
 					<form class="py-4 px-2">
 						<div class="mb-3">
 						<label for="" class="form-label">Youtube video link</label>
-						<input type="text"
+						<input type="url" hx-get="/html_info_id" hx-trigger="keyup changed delay:500ms" hx-target="#search-results"
 							class="form-control" name="ytlink" id="ytlink"  placeholder="https://youtube.com/watch?v=">
 						<small id="helpId" class="form-text text-muted">Here you can enter youtube video link</small>
 						</div>
@@ -70,6 +71,9 @@
 							<button type="button" class="btn my-1 btn-secondary" id="watch">Watch below</button>
 						</div>
 					</form>
+				</div>
+				<div id="search-results" class="row justify-content-around align-items-center">
+					
 				</div>
 				<div class="row justify-content-center align-items-center">
 					<div class="col text-center position-relative">
@@ -136,6 +140,15 @@
 			var match = url.match(regExp);
 			return (match&&match[7].length==11)? match[7] : false;
 		}
+		document.body.addEventListener('htmx:configRequest', function(evt) {
+			if(evt.detail.parameters["ytlink"] != null) {
+				if(youtube_parser(evt.detail.parameters["ytlink"])) {
+					evt.detail.path += "/" + youtube_parser(evt.detail.parameters["ytlink"])
+				}
+			}
+
+		});
+
 	</script>
 </body>
 </html>
