@@ -125,10 +125,10 @@ async fn html_get_info_id(req: HttpRequest, path: web::Path<String>) -> String {
         }
     
         let html = format!(r#"
-            <div class='col-12 col-md-4 align-items-center text-center justify-content-center'>
+            <div class='col-12 align-items-center text-center justify-content-center'>
                 <img src='{}' style='object-fit: cover; width: 100%; user-select: none;' alt='thumbnail' class='img-fluid img-thumbnail'/>
             </div>
-            <div class="col-12 col-md-8 align-items-center">
+            <div class="col-12 align-items-center">
                 <h3><a href='{}'>{}</a></h3>
                 <p>{}</p>
                 <small>Author: {}</small>
