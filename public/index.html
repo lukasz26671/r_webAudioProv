@@ -6,149 +6,233 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Youtube audio stream service</title>
 	<style>
-		html, body {
-			width: 100%;
-			height: 100%;
-		}
-		iframe#ytplayback {
-			top: 0;
-			left: 0;
-			width: 100%;
-			aspect-ratio: 16/9;
-		}
-		audio {
-			top: 0;
-			left: 50%;
-			transform: translateX(-50%);
-			width: 100%;
-		}
-		@media (max-width: 800px) {
-			audio {
-				width: 100%;
-			}
-		@media (max-width: 576px) {
-			#btns {
-				width: 100%;
-				margin: 0 auto !important;
-			}
-			#btns #stream {
-				margin: 0 !important
-			}
-		}
-		}
+		html, body { width: 100%; height: 100%; }
+		iframe#ytplayback { top: 0; left: 0; width: 100%; aspect-ratio: 16/9; }
+		audio { width: 100%; }
+		.status-box { display: none; margin-top: 15px; }
+		.spinner-border { width: 1rem; height: 1rem; margin-right: 5px; }
+		.btn:disabled { cursor: not-allowed; opacity: 0.5; }
 	</style>
 	<link rel="stylesheet" href="./css/bootstrap.min.css"/>
 	<script src="https://unpkg.com/htmx.org@1.9.3"></script>
 	<script src="./js/bootstrap.bundle.min.js"></script>
 </head>
 <body class="bg-dark-subtle">
-	<nav class="navbar navbar-dark text-white bg-dark">
-		  <div class="container">
-			<a class="navbar-brand" href="#">Youtube downloader</a>
-	  </div>
-	</nav>
-	<div class="container container-fluid">
-		<div class="row justify-content-center align-self-center">
-			<div class="col-sm-12 col-md-8 col-lg-6">
-				<div class="row">
-					<form class="py-4 px-2">
-						<div class="mb-3">
-						<label for="" class="form-label">Youtube video link</label>
+<nav class="navbar navbar-dark text-white bg-dark">
+	<div class="container">
+		<a class="navbar-brand" href="#">Youtube downloader</a>
+	</div>
+</nav>
+<div class="container container-fluid">
+	<div class="row justify-content-center align-self-center">
+		<div class="col-sm-12 col-md-8 col-lg-6">
+			<div class="row">
+				<form class="py-4 px-2">
+					<div class="mb-3">
+						<label for="ytlink" class="form-label">Youtube video link</label>
 						<input type="url" hx-get="/html_info_id" hx-trigger="keyup changed delay:500ms" hx-target="#search-results"
-							class="form-control" name="ytlink" id="ytlink"  placeholder="https://youtube.com/watch?v=">
-						<small id="helpId" class="form-text text-muted">Here you can enter youtube video link</small>
+							   class="form-control" name="ytlink" id="ytlink"  placeholder="https://youtube.com/watch?v=...">
+						<small id="helpId" class="form-text text-muted">Wklej link do filmu lub playlisty</small>
+					</div>
+					<div class="mb-3">
+						<label for="format" class="form-label">Format</label>
+						<select class="form-select form-select-lg" name="format" id="format">
+							<option value="mp3">mp3 (Audio)</option>
+							<option value="mp4">mp4 (Video)</option>
+						</select>
+					</div>
+					<div id="btns" class="form-group d-flex flex-column flex-sm-row gap-1">
+						<button type="button" class="btn btn-primary" id="download" disabled>Download</button>
+						<button type="button" class="btn btn-warning" id="playlist" disabled>Download playlist</button>
+						<button type="button" class="btn btn-primary" id="stream" disabled>Stream</button>
+						<button type="button" class="btn btn-secondary" id="watch" disabled>Watch below</button>
+					</div>
+
+					<div id="playlist-status" class="status-box alert alert-info">
+						<div class="d-flex align-items-center">
+							<div class="spinner-border text-primary" role="status" id="status-spinner"></div>
+							<span id="status-text">Inicjowanie...</span>
 						</div>
-						<div class="mb-3"> 
-							<label for="format" class="form-label">Format</label>
-							<select class="form-select form-select-lg" name="format" id="format">
-								<option value="mp3">mp3</option>
-								<option value="mp4">mp4</option>
-							</select>
-						</div>
-						<div id="btns" class="form-group d-flex flex-column flex-sm-row">
-							<button type="button" class="btn my-1 btn-primary" id="download">Download</button>
-							<button type="button" class="btn my-1 mx-1 btn-primary" id="stream">Stream</button>
-							<button type="button" class="btn my-1 btn-secondary" id="watch">Watch below</button>
-						</div>
-					</form>
-				</div>
-				<div id="search-results" class="row justify-content-around align-items-center">
-					
-				</div>
-				<div class="row justify-content-center align-items-center">
-					<div class="col text-center position-relative">
-					<audio class="d-none position-absolute" id="playback" controlsList="nodownload"></audio>
-					<iframe class="d-none position-absolute" id="ytplayback" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
-				</div>
+					</div>
+				</form>
+			</div>
+
+			<div id="search-results" class="row justify-content-around align-items-center"></div>
+
+			<div class="row justify-content-center align-items-center">
+				<div class="col text-center position-relative">
+					<audio class="d-none" id="playback" controlsList="nodownload"></audio>
+					<iframe class="d-none" id="ytplayback" title="YouTube video player" frameborder="0" allowfullscreen></iframe>
 				</div>
 			</div>
 		</div>
-		
 	</div>
-	<script>
-		const form = document.querySelector('form');
-		download.addEventListener('click', (evt)=> {
-			let link = getFData();
-			
-			window.location.href = `/download_id/${link}`;
-		});
-		stream.addEventListener('click', (evt)=> {
-			let link = getFData();
+</div>
 
-			window.location.href = `/stream_id/${link}`;
-		});
+<script>
+	const ytInput = document.getElementById('ytlink');
+	const formatSelect = document.getElementById('format');
+	const btnDownload = document.getElementById('download');
+	const btnPlaylist = document.getElementById('playlist');
+	const btnStream = document.getElementById('stream');
+	const btnWatch = document.getElementById('watch');
 
-		watch.addEventListener('click', (evt)=> {
-			const ismp4 = format.value === "mp4";
-			let link = getFData();
-			let audioEl = document.getElementById("playback");
+	const statusBox = document.getElementById('playlist-status');
+	const statusText = document.getElementById('status-text');
+	const statusSpinner = document.getElementById('status-spinner');
 
-			if(!ismp4) {
-				ytplayback.classList.add("d-none")
-				audioEl.classList.remove("d-none")
-				audioEl.classList.add("d-block")
+	function checkLinkType() {
+		const url = ytInput.value;
+		const format = formatSelect.value;
 
-				audioEl.src = `/stream_id/${link}`;
-				ytplayback.src = "";
-				audioEl.controls = true;
-			} else {
-				audioEl.classList.add("d-none")
-				audioEl.pause();
-				audioEl.currentTime = 0;
-				ytplayback.classList.remove("d-none")
-				ytplayback.classList.add("d-block")
+		const hasVideoId = url.includes("v=") || /youtu\.be\/[a-zA-Z0-9_-]{11}/.test(url);
+		const hasPlaylistId = url.includes("list=");
 
-				let s = youtube_parser(`https://youtu.be/${link}`)
-				ytplayback.src=`https://www.youtube.com/embed/${s}`;
-			}
-		});
-		format.addEventListener('change', (evt)=> {
-			stream.disabled = evt.target.value === "mp4"
-		})
+		const canDownloadPlaylist = hasPlaylistId && format === "mp3";
 
-		function getFData() {
-			let formData = new FormData(form);
-			let ytlink = formData.get("ytlink");
-			let link = youtube_parser(ytlink);
-			let format = formData.get("format");
+		btnDownload.disabled = !hasVideoId;
+		btnWatch.disabled = !hasVideoId;
+		btnStream.disabled = !(hasVideoId && format === "mp3");
+		btnPlaylist.disabled = !canDownloadPlaylist;
 
-			return `${link}?format=${format}`;
+		if (hasPlaylistId && !hasVideoId) {
+			document.getElementById("search-results").innerHTML = "";
 		}
-	
-		function youtube_parser(url){
-			var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
-			var match = url.match(regExp);
-			return (match&&match[7].length==11)? match[7] : false;
+	}
+
+	ytInput.addEventListener('input', checkLinkType);
+	formatSelect.addEventListener('change', checkLinkType);
+
+	btnDownload.addEventListener('click', () => {
+		window.location.href = `/download_id/${getFData()}`;
+	});
+
+	btnStream.addEventListener('click', () => {
+		window.location.href = `/stream_id/${getFData()}`;
+	});
+
+	btnPlaylist.addEventListener('click', async () => {
+		const url = ytInput.value;
+		const fmt = formatSelect.value;
+		if(!url) return alert("Wklej link!");
+
+		statusBox.style.display = 'block';
+		statusBox.classList.replace('alert-success', 'alert-info');
+		statusBox.classList.replace('alert-danger', 'alert-info');
+		statusText.innerText = "Inicjowanie zadania...";
+		statusSpinner.style.display = "inline-block";
+
+		try {
+			const resp = await fetch(`/download_playlist?url=${encodeURIComponent(url)}&format=${fmt}`);
+			const data = await resp.json();
+
+			localStorage.setItem("active_task_id", data.task_id);
+			startPolling(data.task_id);
+		} catch (err) {
+			statusText.innerText = "Błąd: Nie udało się nawiązać połączenia.";
+			statusSpinner.style.display = "none";
 		}
-		document.body.addEventListener('htmx:configRequest', function(evt) {
-			if(evt.detail.parameters["ytlink"] != null) {
-				if(youtube_parser(evt.detail.parameters["ytlink"])) {
-					evt.detail.path += "/" + youtube_parser(evt.detail.parameters["ytlink"])
+	});
+
+	async function startPolling(taskId) {
+		statusBox.style.display = 'block';
+		btnPlaylist.disabled = true;
+
+		const interval = setInterval(async () => {
+			try {
+				const resp = await fetch(`/status/${taskId}`);
+				if (!resp.ok) throw new Error("Not found");
+
+				const data = await resp.json();
+				const status = data.status;
+
+				if (status === "ready" || status.startsWith("ready|")) {
+					clearInterval(interval);
+					localStorage.removeItem("active_task_id");
+
+					statusSpinner.style.display = "none";
+					statusBox.classList.replace('alert-info', 'alert-success');
+					statusText.innerHTML = `<strong>Gotowe!</strong> Pobieranie rozpoczęte automatycznie. <br>
+                                        <a href="/get_zip/${taskId}" class="btn btn-sm btn-success mt-2">Pobierz ręcznie</a>`;
+
+					btnPlaylist.disabled = false;
+
+					// Ukryty trigger pobierania
+					const a = document.createElement("a");
+					a.href = `/get_zip/${taskId}`;
+					document.body.appendChild(a);
+					a.click();
+					document.body.removeChild(a);
+
+				} else if (status.startsWith("error")) {
+					clearInterval(interval);
+					localStorage.removeItem("active_task_id");
+					statusSpinner.style.display = "none";
+					statusBox.classList.replace('alert-info', 'alert-danger');
+					statusText.innerText = "Błąd: " + status;
+					btnPlaylist.disabled = false;
+				} else {
+					statusText.innerText = status;
 				}
+			} catch (err) {
+				clearInterval(interval);
+				localStorage.removeItem("active_task_id");
+				statusBox.style.display = 'none';
+				btnPlaylist.disabled = false;
 			}
+		}, 2000);
+	}
 
-		});
 
-	</script>
+	btnWatch.addEventListener('click', () => {
+		const ismp4 = formatSelect.value === "mp4";
+		let link = getFData();
+		let audioEl = document.getElementById("playback");
+		let ytFrame = document.getElementById("ytplayback");
+
+		if(!ismp4) {
+			ytFrame.classList.add("d-none");
+			audioEl.classList.remove("d-none");
+			audioEl.src = `/stream_id/${link}`;
+			audioEl.play();
+		} else {
+			audioEl.classList.add("d-none");
+			audioEl.pause();
+			ytFrame.classList.remove("d-none");
+			let id = youtube_parser(ytInput.value);
+			ytFrame.src = `https://www.youtube.com/embed/${id}`;
+		}
+	});
+
+	function getFData() {
+		let id = youtube_parser(ytInput.value);
+		return `${id}?format=${formatSelect.value}`;
+	}
+
+	function youtube_parser(url){
+		var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+		var match = url.match(regExp);
+		return (match && match[7].length == 11) ? match[7] : false;
+	}
+
+	// HTMX config
+	document.body.addEventListener('htmx:configRequest', function(evt) {
+		if(evt.detail.parameters["ytlink"]) {
+			let id = youtube_parser(evt.detail.parameters["ytlink"]);
+			if(id) {
+				evt.detail.path += "/" + id;
+			} else {
+				evt.preventDefault();
+			}
+		}
+	});
+
+	// Autostart polling on load
+	window.addEventListener('load', () => {
+		const savedId = localStorage.getItem("active_task_id");
+		if (savedId) startPolling(savedId);
+		checkLinkType();
+	});
+</script>
 </body>
 </html>

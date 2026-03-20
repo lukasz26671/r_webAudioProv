@@ -7,17 +7,25 @@ edition = "2021"
 
 [dependencies]
 directories = "5.0.1"
+futures = "0.3"
+dashmap = "5.5"
 tokio = { version = "1.29.1", features=["full"] }
-youtube_dl = { version = "^0.8.1", features = ["tokio"] } 
+youtube_dl = { version = "0.10.0", features = ["tokio"] }
 actix-web = "4"
-actix-cors = "0.6.4"
+actix-cors = "0.7.1"
 actix-files = "0.6.2"
 serde = {version="1.0.171", features=["std", "derive"]}
 rustube = "0.6.0"
 open = "5.0.0"
 envy = "0.4.2"
 dotenv = "0.15.0"
+html-escape = "0.2"
+zip = "6.0.0"
+walkdir = "2.5.0"
+anyhow = "1.0.102"
+uuid = { version = "1.22.0" , features = ["v4"]}
+serde_json = "1.0.149"
 
 [package.metadata.bundle]
 Name="YoutubeDownloader"
-copyright = "Copyright (c) Lukasz26671 2023. All rights reserved."
+copyright = "Copyright (c) Lukasz26671 & ItQerk 2026. All rights reserved."
